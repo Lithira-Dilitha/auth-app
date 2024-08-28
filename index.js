@@ -136,6 +136,28 @@ app.get("/token", async (req, res) => {
 
   res.json({ access_token: token });
 });
+
+const authenticateJwt = (req,res,next)=>{
+  const authHead = req.headers.authorization;
+
+  if(authHead){
+    const token = authHead.split(' ')[1];
+
+    jwt.verify(token, process.env.JWT_SECRET,(err,user)=>{
+      if(err) return res.state(403);
+
+      req.user = user;
+      next();
+    });
+  }else{
+    res.state(401);
+  }
+}
+
+app.get("/api/users",authenticateJwt,async(req,res)=>{
+  const resalt = await pool.query("SELECT id,name,email FROM users WHERE id = $1",[req.user.sub]);
+  res.json(resalt.rows[0]);
+})
 app.listen(port, () =>
   console.log(`Server is Running on http://localhost:${port}`)
 );
