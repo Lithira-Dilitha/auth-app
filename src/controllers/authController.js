@@ -1,6 +1,7 @@
 const { Issuer, generators } = require("openid-client");
 const pool = require("../config/db");
 const jwt = require("jsonwebtoken");
+const { validateIdpToken, refreshIdpToken } = require("../util/tokenUtils");
 require("dotenv").config();
 module.exports.auth = async (req, res) => {
   const googleIssuer = await Issuer.discover("https://accounts.google.com");
@@ -22,10 +23,12 @@ module.exports.auth = async (req, res) => {
   );
 
   const authUrl = client.authorizationUrl({
-    scope: "openid profile email",
+    scope: "openid profile email ",
     codeChalleng,
     code_challenge_method: "S256",
     state,
+    prompt: "consent",
+    access_type: "offline",
   });
 
   res.redirect(authUrl);
@@ -66,6 +69,10 @@ module.exports.authCallback = async (req, res) => {
     { state: state }
   );
   console.log("this is token set : " + JSON.stringify(tokenset));
+  const accessToken = tokenset.access_token;
+  const refreshToken1 = tokenset.refresh_token;
+  console.log("this is value of accessToken : " + accessToken);
+  console.log("this is value of refreshToken1 : " + refreshToken1);
 
   const userinfo = await client.userinfo(tokenset.access_token);
   console.log("this is user info : " + JSON.stringify(userinfo));
@@ -77,8 +84,8 @@ module.exports.authCallback = async (req, res) => {
 
   const refreshToken = generators.random(32);
   pool.query(
-    "INSERT INTO user_token(user_id,app_refresh_token,expires_at) VALUES($1, $2, NOW() + INTERVAL '1 week')",
-    [userinfo.sub, refreshToken]
+    "INSERT INTO user_token(user_id,app_refresh_token,expires_at,idp_access_token, idp_refresh_token) VALUES($1, $2, NOW() + INTERVAL '1 week',$3,$4)",
+    [userinfo.sub, refreshToken, tokenset.access_token, tokenset.refresh_token]
   );
   res.cookie("APP_REFRSH_TOKEN", refreshToken, {
     httpOnly: true,
@@ -93,12 +100,25 @@ module.exports.token = async (req, res) => {
   if (!refreshToken) return res.status(401).send("Unauthorized");
 
   const resalt = await pool.query(
-    "SELECT user_id FROM user_token WHERE app_refresh_token = $1 AND expires_at > NOW()",
+    "SELECT user_id, idp_access_token, idp_refresh_token FROM user_token WHERE app_refresh_token = $1 AND expires_at > NOW()",
     [refreshToken]
   );
   if (resalt.rows.length == 0) return res.status(401).send("Unauthorized");
 
-  const { user_id } = resalt.rows[0];
+  const { user_id, idp_access_token, idp_refresh_token } = resalt.rows[0];
+  console.log(resalt.rows[0]);
+
+  let idpTokenValid = await validateIdpToken(idp_access_token);
+  console.log("idp Token valid : " + idpTokenValid);
+
+  if (!idpTokenValid) {
+    const newToken = await refreshIdpToken(idp_refresh_token);
+
+    console.log("This is newToken : " + JSON.stringify(newToken));
+
+    if (!newToken) return res.status(401).send("Unauthorize");
+  }
+
   const userResalt = await pool.query(
     "SELECT name, email FROM users WHERE id = $1",
     [user_id]
