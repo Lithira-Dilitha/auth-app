@@ -4,7 +4,7 @@ const setUserContext = async (req, res, next) => {
   try {
     const userId = req.user.sub;
     console.log("This is User_id : "+userId);
-   const result = await pool.query("SELECT set_config('app.user_id',$1, false)", [userId]);
+   const result = await pool.query("SELECT set_config('app.user_id',$1,true)", [userId]);
    console.log(result);
    
     next();
