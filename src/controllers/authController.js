@@ -1,7 +1,7 @@
 const { Issuer, generators } = require("openid-client");
 const pool = require("../config/db");
 const jwt = require("jsonwebtoken");
-const {privateKey} = require('../config/keys');
+const { getKeyPair } = require("../config/keys");
 require("dotenv").config();
 module.exports.auth = async (req, res) => {
   const googleIssuer = await Issuer.discover("https://accounts.google.com");
@@ -104,7 +104,7 @@ module.exports.token = async (req, res) => {
     "SELECT name, email FROM users WHERE id = $1",
     [user_id]
   );
-
+  const { privateKey } = await getKeyPair();
   const token = jwt.sign(
     {
       sub: user_id,
@@ -112,7 +112,7 @@ module.exports.token = async (req, res) => {
       email: userResalt.rows[0].email,
     },
     privateKey,
-    { algorithm: 'RS256',expiresIn: "1h" }
+    { algorithm: "RS256", expiresIn: "1h" }
   );
   console.log("This is Token : " + JSON.stringify(token));
 
